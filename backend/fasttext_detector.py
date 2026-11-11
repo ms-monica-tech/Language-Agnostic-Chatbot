@@ -4,17 +4,28 @@ High-throughput sub-millisecond language identification supporting 176 languages
 """
 import os
 import re
-import fasttext
 from typing import Tuple, Optional
+import langdetect
+
+try:
+    import fasttext
+except ImportError:
+    fasttext = None
 
 # Suppress fasttext C++ load_model warning
-fasttext.FastText.eprint = lambda x: None
+if fasttext is not None:
+    fasttext.FastText.eprint = lambda x: None
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "lid.176.ftz")
 _model_instance = None
 
 def get_fasttext_model():
     global _model_instance
+    if fasttext is None:
+        raise RuntimeError(
+            "FastText is not installed. Install it separately to enable the "
+            "176-language model; langdetect fallback is available."
+        )
     if _model_instance is None:
         if not os.path.exists(MODEL_PATH):
             raise FileNotFoundError(f"Meta FastText model not found at {MODEL_PATH}")
@@ -48,14 +59,18 @@ def detect_language_fasttext(text: str, confidence_threshold: float = 0.60) -> T
     if any('\u0400' <= ch <= '\u04FF' for ch in cleaned):
         return "ru", 0.99
 
-    try:
-        model = get_fasttext_model()
-        labels, probs = model.predict(cleaned, k=1)
-        if labels and len(labels) > 0:
-            lang = labels[0].replace("__label__", "").lower()
-            conf = float(probs[0])
-            return lang, conf
-    except Exception as e:
-        print(f"[FastText] Detection error: {e}")
+    if fasttext is not None:
+        try:
+            model = get_fasttext_model()
+            labels, probs = model.predict(cleaned, k=1)
+            if labels and len(labels) > 0:
+                lang = labels[0].replace("__label__", "").lower()
+                conf = float(probs[0])
+                return lang, conf
+        except (FileNotFoundError, RuntimeError, OSError) as exc:
+            print(f"[FastText] Detection unavailable: {exc}")
 
-    return "en", 0.50
+    try:
+        return langdetect.detect(cleaned), confidence_threshold
+    except langdetect.lang_detect_exception.LangDetectException:
+        return "en", 0.50

@@ -16,3 +16,4 @@ pypdf
 python-docx
 python-multipart
 websockets
+firebase-admin
